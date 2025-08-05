@@ -1,0 +1,623 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hata Kodu Kayıt Sistemi</title>
+    <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.9/babel.min.js"></script>
+    <link href="./css/tailwind.css" rel="stylesheet">
+    <style>
+        .grid-table {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: auto repeat(11, auto);
+            gap: 1px;
+            background-color: #e5e7eb;
+        }
+        .grid-table-inner {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: auto repeat(8, auto);
+            gap: 1px;
+            background-color: #e5e7eb;
+        }
+        .custom-ic-son-kontrol {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: repeat(5, 1fr);
+            gap: 1px;
+            background-color: #e5e7eb;
+        }
+        .grid-cell {
+            background-color: white;
+            border: 1px solid #d1d5db;
+            padding: 0.5rem;
+            cursor: pointer;
+            text-align: center;
+            overflow-wrap: break-word;
+            word-wrap: break-word;
+        }
+        .selected {
+            background-color: #3b82f6;
+            color: white;
+        }
+        .modal {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+        }
+        .modal-content {
+            background-color: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="root" class="min-h-screen bg-gray-100"></div>
+    <script type="text/babel">
+        const { useState } = React;
+
+        // Örnek kullanıcı verileri
+        const initialUsers = [
+            { id: 1, sicilNo: "1001", password: "admin123" }
+        ];
+
+        const shifts = ["Sabah", "Öğle", "Gece"];
+        const lines = ["İç", "Dış"];
+        const operations = ["Gaz Kaçak Odası", "Performans Odası", "Görsel Kontrol", "Son Kontrol"];
+
+        const App = () => {
+            const [isLoggedIn, setIsLoggedIn] = useState(false);
+            const [currentUser, setCurrentUser] = useState(null);
+            const [users, setUsers] = useState(initialUsers);
+            const [records, setRecords] = useState([]);
+            const [showRegister, setShowRegister] = useState(false);
+            const [showOperationScreen, setShowOperationScreen] = useState(false);
+            const [showErrorCodeScreen, setShowErrorCodeScreen] = useState(false);
+            const [selectedDate, setSelectedDate] = useState("");
+            const [selectedShift, setSelectedShift] = useState("");
+            const [selectedLine, setSelectedLine] = useState("");
+            const [selectedOperation, setSelectedOperation] = useState("");
+
+            const handleLogin = (sicilNo, password) => {
+                const user = users.find(u => u.sicilNo === sicilNo && u.password === password);
+                if (user) {
+                    setIsLoggedIn(true);
+                    setCurrentUser(user);
+                } else {
+                    alert("Geçersiz sicil no veya şifre!");
+                }
+            };
+
+            const handleRegister = (sicilNo, password) => {
+                if (users.some(u => u.sicilNo === sicilNo)) {
+                    alert("Bu sicil no zaten kayıtlı!");
+                    return;
+                }
+                const newUser = { id: users.length + 1, sicilNo, password };
+                setUsers([...users, newUser]);
+                alert("Kayıt başarılı! Lütfen giriş yapın.");
+                setShowRegister(false);
+            };
+
+            const handleLogout = () => {
+                setIsLoggedIn(false);
+                setCurrentUser(null);
+                setShowOperationScreen(false);
+                setShowErrorCodeScreen(false);
+                setSelectedDate("");
+                setSelectedShift("");
+                setSelectedLine("");
+                setSelectedOperation("");
+            };
+
+            const handleSelectionSubmit = (date, shift, line) => {
+                if (date && shift && line) {
+                    setSelectedDate(date);
+                    setSelectedShift(shift);
+                    setSelectedLine(line);
+                    setShowOperationScreen(true);
+                } else {
+                    alert("Lütfen tüm alanları doldurun!");
+                }
+            };
+
+            const handleOperationSubmit = (operation) => {
+                if (operation) {
+                    setSelectedOperation(operation);
+                    setShowErrorCodeScreen(true);
+                } else {
+                    alert("Lütfen bir operasyon seçin!");
+                }
+            };
+
+            return (
+                <div className="container mx-auto p-4">
+                    {isLoggedIn ? (
+                        showErrorCodeScreen ? (
+                            <ErrorCodeScreen
+                                user={currentUser}
+                                date={selectedDate}
+                                shift={selectedShift}
+                                line={selectedLine}
+                                operation={selectedOperation}
+                                records={records}
+                                setRecords={setRecords}
+                                setShowErrorCodeScreen={setShowErrorCodeScreen}
+                                onLogout={handleLogout}
+                            />
+                        ) : showOperationScreen ? (
+                            <OperationScreen
+                                onSubmit={handleOperationSubmit}
+                                onBack={() => setShowOperationScreen(false)}
+                                onLogout={handleLogout}
+                            />
+                        ) : (
+                            <SelectionScreen
+                                onSubmit={handleSelectionSubmit}
+                                onLogout={handleLogout}
+                            />
+                        )
+                    ) : (
+                        showRegister ? (
+                            <RegisterForm onRegister={handleRegister} setShowRegister={setShowRegister} />
+                        ) : (
+                            <LoginForm onLogin={handleLogin} setShowRegister={setShowRegister} />
+                        )
+                    )}
+                </div>
+            );
+        };
+
+        const LoginForm = ({ onLogin, setShowRegister }) => {
+            const [sicilNo, setSicilNo] = useState("");
+            const [password, setPassword] = useState("");
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onLogin(sicilNo, password);
+            };
+
+            return (
+                <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-xl">
+                    <h2 className="text-2xl font-bold mb-4 text-center">Giriş Yap</h2>
+                    <div className="space-y-4">
+                        <input
+                            type="text"
+                            placeholder="Sicil No"
+                            value={sicilNo}
+                            onChange={(e) => setSicilNo(e.target.value)}
+                            className="w-full p-2 border rounded"
+                        />
+                        <input
+                            type="password"
+                            placeholder="Şifre"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full p-2 border rounded"
+                        />
+                        <button
+                            onClick={handleSubmit}
+                            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                        >
+                            Giriş Yap
+                        </button>
+                        <button
+                            onClick={() => setShowRegister(true)}
+                            className="w-full text-blue-500 hover:underline"
+                        >
+                            Kayıt Ol
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const RegisterForm = ({ onRegister, setShowRegister }) => {
+            const [sicilNo, setSicilNo] = useState("");
+            const [password, setPassword] = useState("");
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onRegister(sicilNo, password);
+            };
+
+            return (
+                <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-xl">
+                    <h2 className="text-2xl font-bold mb-4 text-center">Kayıt Ol</h2>
+                    <div className="space-y-4">
+                        <input
+                            type="text"
+                            placeholder="Sicil No"
+                            value={sicilNo}
+                            onChange={(e) => setSicilNo(e.target.value)}
+                            className="w-full p-2 border rounded"
+                        />
+                        <input
+                            type="password"
+                            placeholder="Şifre"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full p-2 border rounded"
+                        />
+                        <button
+                            onClick={handleSubmit}
+                            className="w-full bg-green-500 text-white p-2 rounded hover:bg-green-600"
+                        >
+                            Kayıt Ol
+                        </button>
+                        <button
+                            onClick={() => setShowRegister(false)}
+                            className="w-full text-blue-500 hover:underline"
+                        >
+                            Giriş Yap
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const SelectionScreen = ({ onSubmit, onLogout }) => {
+            const [date, setDate] = useState("");
+            const [shift, setShift] = useState("");
+            const [line, setLine] = useState("");
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSubmit(date, shift, line);
+            };
+
+            return (
+                <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-xl">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-2xl font-bold">Seçim Ekranı</h2>
+                        <button
+                            onClick={onLogout}
+                            className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+                        >
+                            Çıkış Yap
+                        </button>
+                    </div>
+                    <div className="space-y-4">
+                        <input
+                            type="date"
+                            value={date}
+                            onChange={(e) => setDate(e.target.value)}
+                            className="w-full p-2 border rounded"
+                        />
+                        <select
+                            value={shift}
+                            onChange={(e) => setShift(e.target.value)}
+                            className="w-full p-2 border rounded"
+                        >
+                            <option value="">Vardiya Seç</option>
+                            {shifts.map(s => (
+                                <option key={s} value={s}>{s}</option>
+                            ))}
+                        </select>
+                        <select
+                            value={line}
+                            onChange={(e) => setLine(e.target.value)}
+                            className="w-full p-2 border rounded"
+                        >
+                            <option value="">Hat Seç</option>
+                            {lines.map(l => (
+                                <option key={l} value={l}>{l}</option>
+                            ))}
+                        </select>
+                        <button
+                            onClick={handleSubmit}
+                            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                        >
+                            Devam Et
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        const OperationScreen = ({ onSubmit, onBack, onLogout }) => {
+            const [operation, setOperation] = useState("");
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSubmit(operation);
+            };
+
+            return (
+                <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-xl">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-2xl font-bold">Operasyon Seçimi</h2>
+                        <div className="space-x-2">
+                            <button
+                                onClick={onBack}
+                                className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+                            >
+                                Geri
+                            </button>
+                            <button
+                                onClick={onLogout}
+                                className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+                            >
+                                Çıkış Yap
+                            </button>
+                        </div>
+                    </div>
+                    <div className="space-y-4">
+                        <select
+                            value={operation}
+                            onChange={(e) => setOperation(e.target.value)}
+                            className="w-full p-2 border rounded"
+                        >
+                            <option value="">Operasyon Seç</option>
+                            {operations.map(o => (
+                                <option key={o} value={o}>{o}</option>
+                            ))}
+                        </select>
+                        <button
+                            onClick={handleSubmit}
+                            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
+                        >
+                            Devam Et
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // Custom tablo verisi
+        const icHatSonKontrolData = [
+            ["",      "Boş",       "SJ",       "SK"      ], // 1. satır (A1,B1,C1,D1)
+            ["KAÇAK", "EVA",       "",         ""        ], // 2. satır (A2,B2,C2,D2)
+            ["KAÇAK", "KONDENSER", "",         ""        ], // 3. satır (A3,B3,C3,D3)
+            ["REKOR", "KONDENSER", "",         ""        ], // 4. satır (A4,B4,C4,D4)
+            ["REKOR", "KAYNAK",    "",         ""        ], // 5. satır (A5,B5,C5,D5)
+        ];
+
+        const ErrorCodeScreen = ({ user, date, shift, line, operation, records, setRecords, setShowErrorCodeScreen, onLogout }) => {
+            const [currentCell, setCurrentCell] = useState("");
+            const [showModal, setShowModal] = useState(false);
+
+            // Koşullu tablo tanımlamaları
+            let columns, rows, gridClass, customTable, isCustomIcHatSonKontrol;
+
+            isCustomIcHatSonKontrol = (line === "İç" && operation === "Son Kontrol");
+            if (isCustomIcHatSonKontrol) {
+                customTable = icHatSonKontrolData;
+                gridClass = "custom-ic-son-kontrol";
+            } else {
+                columns = line === "Dış" && operation === "Gaz Kaçak Odası" 
+                    ? ["", "UA3+", "UL2", "U24A"]
+                    : line === "İç" && operation === "Gaz Kaçak Odası" 
+                    ? ["", "SJ", "SK"]
+                    : ["", "SJ", "SK"];
+                rows = line === "Dış" && operation === "Gaz Kaçak Odası" 
+                    ? ["", "C BORU KAÇAĞI", "KONNEKTÖR BORU KAÇAĞI", "PİNCHOFF KAÇAĞI", "ADAPTÖR KAÇAĞI", "SERVİS VANASI KAÇAĞI", 
+                       "KOMPREÖR GİRİŞ BORUSU KAYNAĞI KAÇAĞI", "AKÜMÜLATÖR GİRİŞ BORUSU KAÇAĞI", "KONDANSER FİNLER ARASI KAÇAK", 
+                       "GİRİŞ BORUSU KAÇAĞI", "ÇIKIŞ BORUSU KAÇAĞI"]
+                    : line === "İç" && operation === "Gaz Kaçak Odası" 
+                    ? ["", "GİRİŞ REKOR KAÇAĞI", "ÇIKIŞ REKOR KAÇAĞI", "C BORU KAÇAĞI", "U BORU KAÇAĞI", "KONNEKTÖR BORU KAÇAĞI", 
+                       "EVA FİNLER ARASI KAÇAK", "KAPLİN KAÇAĞI"]
+                    : ["", "Giriş Rekor Kaçağı", "Çıkış Rekor Kaçağı", "C Boru Kaçağı", "Konnektör Boru Kaçağı", 
+                       "Eva Finler Arası Kaçak", "Kaplin Kaçağı"];
+                gridClass = line === "Dış" && operation === "Gaz Kaçak Odası" ? "grid-table" : "grid-table-inner";
+            }
+
+            // Hücre tıklama işlemi
+            const handleCellClick = (row, col, rowIndex, colIndex) => {
+                if (isCustomIcHatSonKontrol) {
+                    // Sadece A1 ve B1 hariç, diğer boş hücreler seçilebilir
+                    const isHeaderCell = (rowIndex === 0 && (colIndex === 0 || colIndex === 1));
+                    const isSelectable = !isHeaderCell && customTable[rowIndex][colIndex] === "";
+                    if (isSelectable) {
+                        const cellKey = `R${rowIndex + 1}C${colIndex + 1}`;
+                        setCurrentCell(cellKey);
+                        setShowModal(true);
+                    }
+                } else {
+                    if (row !== "" && col !== "") {
+                        const cellKey = `${row}-${col}`;
+                        setCurrentCell(cellKey);
+                        setShowModal(true);
+                    }
+                }
+            };
+
+            const handleConfirm = (confirm) => {
+                if (confirm && currentCell) {
+                    const newRecord = {
+                        id: records.length + 1,
+                        date,
+                        shift,
+                        line,
+                        operation,
+                        errorCode: currentCell,
+                        sicilNo: user.sicilNo
+                    };
+                    setRecords([...records, newRecord]);
+                    alert(`Seçilen hücre (${currentCell}) kaydedildi!`);
+                }
+                setShowModal(false);
+                setCurrentCell("");
+            };
+
+            return (
+                <div className="max-w-2xl mx-auto mt-10 p-6 bg-white rounded-lg shadow-xl">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-2xl font-bold">Hücre Seçimi Ekranı</h2>
+                        <div className="space-x-2">
+                            <button
+                                onClick={() => setShowErrorCodeScreen(false)}
+                                className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
+                            >
+                                Geri
+                            </button>
+                            <button
+                                onClick={onLogout}
+                                className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+                            >
+                                Çıkış Yap
+                            </button>
+                        </div>
+                    </div>
+                    <div className="mb-6">
+                        <p><strong>Tarih:</strong> {date}</p>
+                        <p><strong>Vardiya:</strong> {shift}</p>
+                        <p><strong>Hat:</strong> {line}</p>
+                        <p><strong>Operasyon:</strong> {operation}</p>
+                    </div>
+                    <div className="space-y-4">
+                        <div className="p-4 bg-gray-100 rounded-lg">
+                            <h3 className="text-lg font-bold mb-2">Hücre Seçimi</h3>
+                            {isCustomIcHatSonKontrol ? (
+                                <div className={gridClass}>
+                                    {customTable.map((rowArr, rowIndex) =>
+                                        rowArr.map((cell, colIndex) => {
+                                            const isHeaderCell = (rowIndex === 0 && (colIndex === 0 || colIndex === 1));
+                                            const isSelectable = !isHeaderCell && cell === "";
+                                            return (
+                                                <div
+                                                    key={`custom-${rowIndex}-${colIndex}`}
+                                                    className={`grid-cell ${currentCell === `R${rowIndex + 1}C${colIndex + 1}` ? 'selected' : ''}`}
+                                                    style={{
+                                                        fontWeight: (rowIndex === 0 || colIndex === 0) ? "bold" : "normal",
+                                                        cursor: isSelectable ? "pointer" : "default",
+                                                        backgroundColor: (rowIndex === 0 || colIndex === 0)
+                                                            ? "#f3f4f6"
+                                                            : (cell === "" ? "white" : "#e5e7eb")
+                                                    }}
+                                                    onClick={() => handleCellClick(rowArr, cell, rowIndex, colIndex)}
+                                                >
+                                                    {cell}
+                                                </div>
+                                            );
+                                        })
+                                    )}
+                                </div>
+                            ) : (
+                                <div className={gridClass}>
+                                    {rows.map((row, rowIndex) => (
+                                        columns.map((col, colIndex) => (
+                                            <div
+                                                key={`${row}-${col}`}
+                                                className={`grid-cell ${currentCell === `${row}-${col}` ? 'selected' : ''}`}
+                                                onClick={() => handleCellClick(row, col)}
+                                            >
+                                                {row === "" && col === "" ? "" : row === "" ? col : col === "" ? row : ""}
+                                            </div>
+                                        ))
+                                    ))}
+                                </div>
+                            )}
+                            {showModal && (
+                                <div className="modal">
+                                    <div className="modal-content">
+                                        <p>Seçilen hücre: {currentCell}. Onaylıyor musunuz?</p>
+                                        <div className="mt-4 space-x-4">
+                                            <button
+                                                onClick={() => handleConfirm(true)}
+                                                className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
+                                            >
+                                                Evet
+                                            </button>
+                                            <button
+                                                onClick={() => handleConfirm(false)}
+                                                className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
+                                            >
+                                                Hayır
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <div className="mt-8">
+                        <h3 className="text-xl font-bold mb-4">Kayıtlar</h3>
+                        {records.length > 0 ? (
+                            <table className="w-full border-collapse">
+                                <thead>
+                                    <tr className="bg-gray-200">
+                                        <th className="border p-2">Sicil No</th>
+                                        <th className="border p-2">Tarih</th>
+                                        <th className="border p-2">Vardiya</th>
+                                        <th className="border p-2">Hat</th>
+                                        <th className="border p-2">Operasyon</th>
+                                        <th className="border p-2">Seçilen Hücre</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {records.map(record => (
+                                        <tr key={record.id} className="border">
+                                            <td className="border p-2">{record.sicilNo}</td>
+                                            <td className="border p-2">{record.date}</td>
+                                            <td className="border p-2">{record.shift}</td>
+                                            <td className="border p-2">{record.line}</td>
+                                            <td className="border p-2">{record.operation}</td>
+                                            <td className="border p-2">{record.errorCode}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        ) : (
+                            <p>Henüz kayıt yok.</p>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
