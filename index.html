@@ -1,43 +1,4 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
-
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
@@ -47,13 +8,40 @@
     <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.22.9/babel.min.js"></script>
     <link href="./css/tailwind.css" rel="stylesheet">
+    <!-- Google Apps Script Webhook URL'nizi buraya girin -->
+    <script>
+        const SHEETS_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbxLfQy8gXKjQ5oV1FP3_x05J6f96aOlwCJWWbu3FvW8Yo3ABlZ2pwYKRkdg9LWF23tetw/exec';
+    </script>
     <style>
+        body {
+            background-color: #f3f4f6;
+            font-family: 'Arial', sans-serif;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .card {
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 24px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
         .grid-table {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             grid-template-rows: auto repeat(11, auto);
             gap: 1px;
             background-color: #e5e7eb;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
         }
         .grid-table-inner {
             display: grid;
@@ -61,26 +49,57 @@
             grid-template-rows: auto repeat(8, auto);
             gap: 1px;
             background-color: #e5e7eb;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
         }
-        .custom-ic-son-kontrol {
+        .grid-table-visual {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            grid-template-rows: repeat(5, 1fr);
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: auto repeat(22, auto);
             gap: 1px;
             background-color: #e5e7eb;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .grid-table-final {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            grid-template-rows: auto repeat(33, auto);
+            gap: 1px;
+            background-color: #e5e7eb;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .grid-table-final-outer {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-rows: auto repeat(34, auto);
+            gap: 1px;
+            background-color: #e5e7eb;
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            overflow: hidden;
         }
         .grid-cell {
-            background-color: white;
+            background-color: #ffffff;
             border: 1px solid #d1d5db;
-            padding: 0.5rem;
+            padding: 12px;
             cursor: pointer;
             text-align: center;
             overflow-wrap: break-word;
             word-wrap: break-word;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .grid-cell:hover {
+            background-color: #f3f4f6;
         }
         .selected {
             background-color: #3b82f6;
             color: white;
+            font-weight: bold;
         }
         .modal {
             display: flex;
@@ -92,12 +111,157 @@
             width: 100%;
             height: 100%;
             background-color: rgba(0, 0, 0, 0.5);
+            animation: fadeIn 0.3s;
+            z-index: 50;
         }
         .modal-content {
             background-color: white;
-            padding: 2rem;
-            border-radius: 0.5rem;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             text-align: center;
+            width: 90%;
+            max-width: 400px;
+            animation: slideIn 0.3s;
+        }
+        .info-message {
+            padding: 10px 16px;
+            border-radius: 8px;
+            background-color: #e0f2fe;
+            color: #0369a1;
+            font-weight: 500;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        .error-message {
+            padding: 10px 16px;
+            border-radius: 8px;
+            background-color: #fee2e2;
+            color: #b91c1c;
+            font-weight: 500;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        .success-message {
+            padding: 10px 16px;
+            border-radius: 8px;
+            background-color: #dcfce7;
+            color: #166534;
+            font-weight: 500;
+            margin-bottom: 16px;
+            text-align: center;
+        }
+        .button-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 24px;
+            margin-top: 24px;
+        }
+        button {
+            padding: 10px 20px;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        button:hover {
+            transform: scale(1.05);
+        }
+        .btn-primary {
+            background-color: #3b82f6;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #2563eb;
+        }
+        .btn-secondary {
+            background-color: #6b7280;
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #4b5563;
+        }
+        .btn-danger {
+            background-color: #ef4444;
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #dc2626;
+        }
+        .btn-success {
+            background-color: #10b981;
+            color: white;
+        }
+        .btn-success:hover {
+            background-color: #059669;
+        }
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            transition: border-color 0.2s;
+        }
+        input:focus, select:focus {
+            border-color: #3b82f6;
+            outline: none;
+        }
+        .records-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            background-color: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .records-table th {
+            background-color: #3b82f6;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            border-bottom: 2px solid #2563eb;
+        }
+        .records-table td {
+            padding: 12px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .records-table tr:hover {
+            background-color: #f3f4f6;
+        }
+        @media (max-width: 768px) {
+            .card {
+                padding: 16px;
+            }
+            .grid-table {
+                grid-template-columns: 1fr;
+            }
+            .grid-table-inner {
+                grid-template-columns: 1fr;
+            }
+            .grid-table-visual {
+                grid-template-columns: 1fr;
+            }
+            .grid-table-final {
+                grid-template-columns: 1fr;
+            }
+            .grid-table-final-outer {
+                grid-template-columns: 1fr;
+            }
+            .grid-cell {
+                padding: 8px;
+            }
+            .modal-content {
+                width: 80%;
+            }
+            .records-table th, .records-table td {
+                padding: 8px;
+            }
+            .button-row {
+                flex-direction: column;
+                gap: 12px;
+            }
         }
     </style>
 </head>
@@ -106,14 +270,26 @@
     <script type="text/babel">
         const { useState } = React;
 
-        // Örnek kullanıcı verileri
         const initialUsers = [
             { id: 1, sicilNo: "1001", password: "admin123" }
         ];
 
-        const shifts = ["Sabah", "Öğle", "Gece"];
-        const lines = ["İç", "Dış"];
+        const shifts = ["Sabah", "Öğle"];
+        const lines = ["İç 1", "İç 2", "Dış 1", "Dış 2"];
         const operations = ["Gaz Kaçak Odası", "Performans Odası", "Görsel Kontrol", "Son Kontrol"];
+
+        function todayString() {
+            const d = new Date();
+            const month = ("0" + (d.getMonth() + 1)).slice(-2);
+            const day = ("0" + d.getDate()).slice(-2);
+            return d.getFullYear() + "-" + month + "-" + day;
+        }
+
+        function getMainLine(line) {
+            if (line.startsWith("İç")) return "İç";
+            if (line.startsWith("Dış")) return "Dış";
+            return "";
+        }
 
         const App = () => {
             const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -127,25 +303,38 @@
             const [selectedShift, setSelectedShift] = useState("");
             const [selectedLine, setSelectedLine] = useState("");
             const [selectedOperation, setSelectedOperation] = useState("");
+            const [globalMessage, setGlobalMessage] = useState({ type: "", text: "" });
+            const [showChangeUserModal, setShowChangeUserModal] = useState(false);
+
+            // Helper to show message for X seconds
+            const showMessage = (type, text, duration = 3000) => {
+                setGlobalMessage({ type, text });
+                if (duration > 0) {
+                    setTimeout(() => {
+                        setGlobalMessage({ type: "", text: "" });
+                    }, duration);
+                }
+            };
 
             const handleLogin = (sicilNo, password) => {
                 const user = users.find(u => u.sicilNo === sicilNo && u.password === password);
                 if (user) {
                     setIsLoggedIn(true);
                     setCurrentUser(user);
+                    setGlobalMessage({ type: "", text: "" });
                 } else {
-                    alert("Geçersiz sicil no veya şifre!");
+                    showMessage("error", "Geçersiz sicil no veya şifre!");
                 }
             };
 
             const handleRegister = (sicilNo, password) => {
                 if (users.some(u => u.sicilNo === sicilNo)) {
-                    alert("Bu sicil no zaten kayıtlı!");
+                    showMessage("error", "Bu sicil no zaten kayıtlı!");
                     return;
                 }
                 const newUser = { id: users.length + 1, sicilNo, password };
                 setUsers([...users, newUser]);
-                alert("Kayıt başarılı! Lütfen giriş yapın.");
+                showMessage("success", "Kayıt başarılı! Lütfen giriş yapın.");
                 setShowRegister(false);
             };
 
@@ -158,6 +347,7 @@
                 setSelectedShift("");
                 setSelectedLine("");
                 setSelectedOperation("");
+                setGlobalMessage({ type: "", text: "" });
             };
 
             const handleSelectionSubmit = (date, shift, line) => {
@@ -167,7 +357,7 @@
                     setSelectedLine(line);
                     setShowOperationScreen(true);
                 } else {
-                    alert("Lütfen tüm alanları doldurun!");
+                    showMessage("error", "Lütfen tüm alanları doldurun!");
                 }
             };
 
@@ -176,12 +366,35 @@
                     setSelectedOperation(operation);
                     setShowErrorCodeScreen(true);
                 } else {
-                    alert("Lütfen bir operasyon seçin!");
+                    showMessage("error", "Lütfen bir operasyon seçin!");
+                }
+            };
+
+            // Sicil değiştirme için
+            const handleChangeUser = (sicilNo, password) => {
+                const user = users.find(u => u.sicilNo === sicilNo && u.password === password);
+                if (user) {
+                    setCurrentUser(user);
+                    setShowChangeUserModal(false);
+                    showMessage("success", `Kullanıcı değiştirildi: ${user.sicilNo}`);
+                } else {
+                    showMessage("error", "Geçersiz sicil no veya şifre!");
                 }
             };
 
             return (
-                <div className="container mx-auto p-4">
+                <div className="container">
+                    {globalMessage.text && (
+                        <div className={
+                            globalMessage.type === "error"
+                                ? "error-message"
+                                : globalMessage.type === "success"
+                                    ? "success-message"
+                                    : "info-message"
+                        }>
+                            {globalMessage.text}
+                        </div>
+                    )}
                     {isLoggedIn ? (
                         showErrorCodeScreen ? (
                             <ErrorCodeScreen
@@ -194,17 +407,22 @@
                                 setRecords={setRecords}
                                 setShowErrorCodeScreen={setShowErrorCodeScreen}
                                 onLogout={handleLogout}
+                                showMessage={showMessage}
+                                onChangeUser={() => setShowChangeUserModal(true)}
                             />
                         ) : showOperationScreen ? (
                             <OperationScreen
                                 onSubmit={handleOperationSubmit}
                                 onBack={() => setShowOperationScreen(false)}
                                 onLogout={handleLogout}
+                                showMessage={showMessage}
                             />
                         ) : (
                             <SelectionScreen
                                 onSubmit={handleSelectionSubmit}
                                 onLogout={handleLogout}
+                                showMessage={showMessage}
+                                lines={lines}
                             />
                         )
                     ) : (
@@ -213,6 +431,14 @@
                         ) : (
                             <LoginForm onLogin={handleLogin} setShowRegister={setShowRegister} />
                         )
+                    )}
+
+                    {/* Sicil No değiştir modalı */}
+                    {showChangeUserModal && (
+                        <ChangeUserModal
+                            onSubmit={handleChangeUser}
+                            onCancel={() => setShowChangeUserModal(false)}
+                        />
                     )}
                 </div>
             );
@@ -228,36 +454,28 @@
             };
 
             return (
-                <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-xl">
-                    <h2 className="text-2xl font-bold mb-4 text-center">Giriş Yap</h2>
-                    <div className="space-y-4">
+                <div className="card">
+                    <h2 className="text-2xl font-bold mb-6 text-center text-gray-800">Giriş Yap</h2>
+                    <form onSubmit={handleSubmit} className="space-y-4">
                         <input
                             type="text"
                             placeholder="Sicil No"
                             value={sicilNo}
                             onChange={(e) => setSicilNo(e.target.value)}
-                            className="w-full p-2 border rounded"
+                            className="w-full"
                         />
                         <input
                             type="password"
                             placeholder="Şifre"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="w-full p-2 border rounded"
+                            className="w-full"
                         />
-                        <button
-                            onClick={handleSubmit}
-                            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
-                        >
-                            Giriş Yap
-                        </button>
-                        <button
-                            onClick={() => setShowRegister(true)}
-                            className="w-full text-blue-500 hover:underline"
-                        >
+                        <button type="submit" className="btn-primary w-full">Giriş Yap</button>
+                        <button type="button" onClick={() => setShowRegister(true)} className="w-full text-blue-500 hover:underline">
                             Kayıt Ol
                         </button>
-                    </div>
+                    </form>
                 </div>
             );
         };
@@ -272,42 +490,94 @@
             };
 
             return (
-                <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-xl">
-                    <h2 className="text-2xl font-bold mb-4 text-center">Kayıt Ol</h2>
-                    <div className="space-y-4">
+                <div className="card">
+                    <h2 className="text-2xl font-bold mb-6 text-center text-gray-800">Kayıt Ol</h2>
+                    <form onSubmit={handleSubmit} className="space-y-4">
                         <input
                             type="text"
                             placeholder="Sicil No"
                             value={sicilNo}
                             onChange={(e) => setSicilNo(e.target.value)}
-                            className="w-full p-2 border rounded"
+                            className="w-full"
                         />
                         <input
                             type="password"
                             placeholder="Şifre"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
-                            className="w-full p-2 border rounded"
+                            className="w-full"
                         />
-                        <button
-                            onClick={handleSubmit}
-                            className="w-full bg-green-500 text-white p-2 rounded hover:bg-green-600"
-                        >
-                            Kayıt Ol
-                        </button>
-                        <button
-                            onClick={() => setShowRegister(false)}
-                            className="w-full text-blue-500 hover:underline"
-                        >
+                        <button type="submit" className="btn-success w-full">Kayıt Ol</button>
+                        <button type="button" onClick={() => setShowRegister(false)} className="w-full text-blue-500 hover:underline">
                             Giriş Yap
                         </button>
+                    </form>
+                </div>
+            );
+        };
+
+        // Sicil değiştir butonu için ek modal component
+        const ChangeUserModal = ({ onSubmit, onCancel }) => {
+            const [sicilNo, setSicilNo] = useState("");
+            const [password, setPassword] = useState("");
+            const [showPassword, setShowPassword] = useState(false);
+
+            const handleSubmit = (e) => {
+                e.preventDefault();
+                onSubmit(sicilNo, password);
+            };
+
+            return (
+                <div className="modal">
+                    <div className="modal-content">
+                        <h3 className="text-lg font-bold mb-4 text-gray-800">Sicil No Değiştir</h3>
+                        <form onSubmit={handleSubmit}>
+                            <input
+                                type="text"
+                                placeholder="Sicil No"
+                                value={sicilNo}
+                                onChange={(e) => setSicilNo(e.target.value)}
+                                className="w-full"
+                            />
+                            <div style={{ position: 'relative' }}>
+                                <input
+                                    type={showPassword ? "text" : "password"}
+                                    placeholder="Şifre"
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="w-full"
+                                />
+                                <button
+                                    type="button"
+                                    style={{
+                                        position: 'absolute',
+                                        right: 10,
+                                        top: 10,
+                                        background: 'none',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        color: '#3b82f6'
+                                    }}
+                                    tabIndex={-1}
+                                    onClick={() => setShowPassword(v => !v)}
+                                    title="Şifreyi Göster/Gizle"
+                                >
+                                    {showPassword ? "Gizle" : "Göster"}
+                                </button>
+                            </div>
+                            <div className="button-row">
+                                <button type="submit" className="btn-success">Geçiş Yap</button>
+                                <button type="button" className="btn-danger" onClick={onCancel}>İptal</button>
+                            </div>
+                        </form>
                     </div>
                 </div>
             );
         };
 
-        const SelectionScreen = ({ onSubmit, onLogout }) => {
-            const [date, setDate] = useState("");
+        // LINES props verildi
+        const SelectionScreen = ({ onSubmit, onLogout, showMessage, lines }) => {
+            const [date, setDate] = useState(todayString());
             const [shift, setShift] = useState("");
             const [line, setLine] = useState("");
 
@@ -317,27 +587,22 @@
             };
 
             return (
-                <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-xl">
+                <div className="card">
                     <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-2xl font-bold">Seçim Ekranı</h2>
-                        <button
-                            onClick={onLogout}
-                            className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-                        >
-                            Çıkış Yap
-                        </button>
+                        <h2 className="text-2xl font-bold text-gray-800">Seçim Ekranı</h2>
+                        <button onClick={onLogout} className="btn-danger">Çıkış Yap</button>
                     </div>
-                    <div className="space-y-4">
+                    <form onSubmit={handleSubmit} className="space-y-4">
                         <input
                             type="date"
                             value={date}
                             onChange={(e) => setDate(e.target.value)}
-                            className="w-full p-2 border rounded"
+                            className="w-full"
                         />
                         <select
                             value={shift}
                             onChange={(e) => setShift(e.target.value)}
-                            className="w-full p-2 border rounded"
+                            className="w-full"
                         >
                             <option value="">Vardiya Seç</option>
                             {shifts.map(s => (
@@ -347,25 +612,20 @@
                         <select
                             value={line}
                             onChange={(e) => setLine(e.target.value)}
-                            className="w-full p-2 border rounded"
+                            className="w-full"
                         >
                             <option value="">Hat Seç</option>
                             {lines.map(l => (
                                 <option key={l} value={l}>{l}</option>
                             ))}
                         </select>
-                        <button
-                            onClick={handleSubmit}
-                            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
-                        >
-                            Devam Et
-                        </button>
-                    </div>
+                        <button type="submit" className="btn-primary w-full">Devam Et</button>
+                    </form>
                 </div>
             );
         };
 
-        const OperationScreen = ({ onSubmit, onBack, onLogout }) => {
+        const OperationScreen = ({ onSubmit, onBack, onLogout, showMessage }) => {
             const [operation, setOperation] = useState("");
 
             const handleSubmit = (e) => {
@@ -374,207 +634,226 @@
             };
 
             return (
-                <div className="max-w-md mx-auto mt-10 p-6 bg-white rounded-lg shadow-xl">
+                <div className="card">
                     <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-2xl font-bold">Operasyon Seçimi</h2>
+                        <h2 className="text-2xl font-bold text-gray-800">Operasyon Seçimi</h2>
                         <div className="space-x-2">
-                            <button
-                                onClick={onBack}
-                                className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
-                            >
-                                Geri
-                            </button>
-                            <button
-                                onClick={onLogout}
-                                className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-                            >
-                                Çıkış Yap
-                            </button>
+                            <button onClick={onBack} className="btn-secondary">Geri</button>
+                            <button onClick={onLogout} className="btn-danger">Çıkış Yap</button>
                         </div>
                     </div>
-                    <div className="space-y-4">
+                    <form onSubmit={handleSubmit} className="space-y-4">
                         <select
                             value={operation}
                             onChange={(e) => setOperation(e.target.value)}
-                            className="w-full p-2 border rounded"
+                            className="w-full"
                         >
                             <option value="">Operasyon Seç</option>
                             {operations.map(o => (
                                 <option key={o} value={o}>{o}</option>
                             ))}
                         </select>
-                        <button
-                            onClick={handleSubmit}
-                            className="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600"
-                        >
-                            Devam Et
-                        </button>
-                    </div>
+                        <button type="submit" className="btn-primary w-full">Devam Et</button>
+                    </form>
                 </div>
             );
         };
 
-        // Custom tablo verisi
-        const icHatSonKontrolData = [
-            ["",      "Boş",       "SJ",       "SK"      ], // 1. satır (A1,B1,C1,D1)
-            ["KAÇAK", "EVA",       "",         ""        ], // 2. satır (A2,B2,C2,D2)
-            ["KAÇAK", "KONDENSER", "",         ""        ], // 3. satır (A3,B3,C3,D3)
-            ["REKOR", "KONDENSER", "",         ""        ], // 4. satır (A4,B4,C4,D4)
-            ["REKOR", "KAYNAK",    "",         ""        ], // 5. satır (A5,B5,C5,D5)
-        ];
-
-        const ErrorCodeScreen = ({ user, date, shift, line, operation, records, setRecords, setShowErrorCodeScreen, onLogout }) => {
+        // onChangeUser prop eklendi
+        const ErrorCodeScreen = ({ user, date, shift, line, operation, records, setRecords, setShowErrorCodeScreen, onLogout, showMessage, onChangeUser }) => {
             const [currentCell, setCurrentCell] = useState("");
             const [showModal, setShowModal] = useState(false);
+            const [saving, setSaving] = useState(false);
+            const [lastRecord, setLastRecord] = useState(null);
 
-            // Koşullu tablo tanımlamaları
-            let columns, rows, gridClass, customTable, isCustomIcHatSonKontrol;
+            // "İç 1" ve "İç 2" => "İç"
+            // "Dış 1" ve "Dış 2" => "Dış"
+            const mainLine = getMainLine(line);
 
-            isCustomIcHatSonKontrol = (line === "İç" && operation === "Son Kontrol");
-            if (isCustomIcHatSonKontrol) {
-                customTable = icHatSonKontrolData;
-                gridClass = "custom-ic-son-kontrol";
-            } else {
-                columns = line === "Dış" && operation === "Gaz Kaçak Odası" 
-                    ? ["", "UA3+", "UL2", "U24A"]
-                    : line === "İç" && operation === "Gaz Kaçak Odası" 
-                    ? ["", "SJ", "SK"]
-                    : ["", "SJ", "SK"];
-                rows = line === "Dış" && operation === "Gaz Kaçak Odası" 
-                    ? ["", "C BORU KAÇAĞI", "KONNEKTÖR BORU KAÇAĞI", "PİNCHOFF KAÇAĞI", "ADAPTÖR KAÇAĞI", "SERVİS VANASI KAÇAĞI", 
-                       "KOMPREÖR GİRİŞ BORUSU KAYNAĞI KAÇAĞI", "AKÜMÜLATÖR GİRİŞ BORUSU KAÇAĞI", "KONDANSER FİNLER ARASI KAÇAK", 
-                       "GİRİŞ BORUSU KAÇAĞI", "ÇIKIŞ BORUSU KAÇAĞI"]
-                    : line === "İç" && operation === "Gaz Kaçak Odası" 
-                    ? ["", "GİRİŞ REKOR KAÇAĞI", "ÇIKIŞ REKOR KAÇAĞI", "C BORU KAÇAĞI", "U BORU KAÇAĞI", "KONNEKTÖR BORU KAÇAĞI", 
-                       "EVA FİNLER ARASI KAÇAK", "KAPLİN KAÇAĞI"]
-                    : ["", "Giriş Rekor Kaçağı", "Çıkış Rekor Kaçağı", "C Boru Kaçağı", "Konnektör Boru Kaçağı", 
-                       "Eva Finler Arası Kaçak", "Kaplin Kaçağı"];
-                gridClass = line === "Dış" && operation === "Gaz Kaçak Odası" ? "grid-table" : "grid-table-inner";
-            }
+            // COLUMN/ROW TABLOLARI mainLine'A GÖRE
+            const columns =
+                mainLine === "Dış" && operation === "Gaz Kaçak Odası" 
+                ? ["", "UA3+", "UL2", "U24A"]
+                : mainLine === "Dış" && operation === "Son Kontrol" 
+                ? ["", "UA3+", "UL2", "U24A"]
+                : mainLine === "İç" && operation === "Gaz Kaçak Odası" 
+                ? ["", "SJ", "SK"]
+                : mainLine === "İç" && operation === "Görsel Kontrol" 
+                ? ["", "SJ", "SK"]
+                : mainLine === "İç" && operation === "Son Kontrol" 
+                ? ["", "SJ", "SK"]
+                : [];
 
-            // Hücre tıklama işlemi
-            const handleCellClick = (row, col, rowIndex, colIndex) => {
-                if (isCustomIcHatSonKontrol) {
-                    // Sadece A1 ve B1 hariç, diğer boş hücreler seçilebilir
-                    const isHeaderCell = (rowIndex === 0 && (colIndex === 0 || colIndex === 1));
-                    const isSelectable = !isHeaderCell && customTable[rowIndex][colIndex] === "";
-                    if (isSelectable) {
-                        const cellKey = `R${rowIndex + 1}C${colIndex + 1}`;
-                        setCurrentCell(cellKey);
-                        setShowModal(true);
-                    }
-                } else {
-                    if (row !== "" && col !== "") {
-                        const cellKey = `${row}-${col}`;
-                        setCurrentCell(cellKey);
-                        setShowModal(true);
-                    }
+            const rows =
+                mainLine === "Dış" && operation === "Gaz Kaçak Odası" 
+                ? ["", "C BORU KAÇAĞI", "KONNEKTÖR BORU KAÇAĞI", "PİNCHOFF KAÇAĞI", "ADAPTÖR KAÇAĞI", "SERVİS VANASI KAÇAĞI", 
+                   "KOMPREÖR GİRİŞ BORUSU KAYNAĞI KAÇAĞI", "AKÜMÜLATÖR GİRİŞ BORUSU KAÇAĞI", "KONDANSER FİNLER ARASI KAÇAK", 
+                   "GİRİŞ BORUSU KAÇAĞI", "ÇIKIŞ BORUSU KAÇAĞI"]
+                : mainLine === "Dış" && operation === "Son Kontrol" 
+                ? ["", "SAC - LEKELİ", "SAC - ÇİZİK", "SAC - DALMA", "SAC - ÇAPAKLI", "SAC - NOKTALAR", "SAC - BÜKÜM", 
+                   "SAC - FİN EZİK", "SAC - BASKI YOK", "SAC - YAĞLI", "PLASTİK - LEKELİ", "PLASTİK - ÇİZİK", "PLASTİK - KIRIK", 
+                   "PLASTİK - ÇAPAKLI", "PLASTİK - PEŞLİ", "AYAKLAR - EKSİK", "AYAKLAR - EĞİK", "AYAKLAR - PASLI", "AYAKLAR - ÇAPAKLI", 
+                   "AYAKLAR - FARKLI MODELE AİT", "VİDALAR - EKSİK", "VİDALAR - RENK FARKI", "VİDALAR - UYGUNSUZ", "VİDALAR - YALAMA", 
+                   "LOGO VE MATBUAT - LOGO YOK", "LOGO VE MATBUAT - LOGO BALONCUKLU", "LOGO VE MATBUAT - LOGO HATALI", 
+                   "LOGO VE MATBUAT - UYARI ETİKETİ HATALI", "LOGO VE MATBUAT - TİP ETİKETİ HATALI", "LOGO VE MATBUAT - TİP ETİKETİ DÜZGÜN DEĞİL", 
+                   "LOGO VE MATBUAT - SMART/DUAL ETİKETİ VAR/YOK", "KONDANSER - FİN EZİK", "KONDANSER - FİNLER ÇAPAKLI", 
+                   "LOGO VE MATBUAT - FİNLER HATALI"]
+                : mainLine === "İç" && operation === "Gaz Kaçak Odası" 
+                ? ["", "GİRİŞ REKOR KAÇAĞI", "ÇIKIŞ REKOR KAÇAĞI", "C BORU KAÇAĞI", "U BORU KAÇAĞI", "KONNEKTÖR BORU KAÇAĞI", 
+                   "EVA FİNLER ARASI KAÇAK", "KAPLİN KAÇAĞI"]
+                : mainLine === "İç" && operation === "Görsel Kontrol" 
+                ? [
+                    "",
+                    "VİDA - HAVA ÇIKIŞ VİDASI YOK",
+                    "VİDA - EVA YAN KAPAK VİDASI YOK",
+                    "VİDA - TOPRAKLAMA VİDASI YOK",
+                    "VİDA - KAPAK VİDASI YOK - KAPAK KIRIK",
+                    "VİDA - KİT GRUBU VİDASI EKSİK",
+                    "EVA - EVA FİN EZİK",
+                    "EVA - İZOLASYON EKSİK",
+                    "EVA - U BORU EZİK",
+                    "GAZ KAÇAK - C BORU KAÇAĞI",
+                    "GAZ KAÇAK - REKOR KAÇAĞI",
+                    "GAZ KAÇAK - PİNCH OFF KAÇAĞI",
+                    "MONTAJ HATASI - KABLOLAR TOPLANMAMIŞ",
+                    "MONTAJ HATASI - KAPAK OTURMAMIŞ",
+                    "MONTAJ HATASI - TOPRAKLAMA KABLO YÖNÜ HATALI",
+                    "MONTAJ HATASI - EVA YAN KAPAK OTURMAMIŞ",
+                    "MONTAJ HATASI - KABLO KİT VE H.Ç.K ARASINA SIKIŞMIŞ",
+                    "MALZEME - SU TAHLİYE HORTUMU YOK",
+                    "MALZEME - HÇK YATAY KANAT ÇIKIK",
+                    "MALZEME - DİSPLAY TIRNAĞI OTURMAMIŞ",
+                    "MALZEME - BORU TUTUCU EKSİK",
+                    "MALZEME - İONİZER KAPAĞI EKSİK"
+                ]
+                : mainLine === "İç" && operation === "Son Kontrol" 
+                ? ["", "ÖN PANO - LEKELİ", "ÖN PANO - ÇİZİK", "ÖN PANO - DALMA", "ÖN PANO - ÇAPAKLI", "ÖN PANO - SİLİKON TAŞMASI", 
+                   "ÖN PANO - BASKI HATASI", "ÖN PANO - BASKI YOK", "ÖN PANO - HAT STAMP HATALI/ÇİZİK", "YATAY KANAT - LEKELİ", 
+                   "YATAY KANAT - ÇİZİK", "YATAY KANAT - KIRIK", "YATAY KANAT - ÇAPAKLI", "YATAY KANAT - PEŞLİ", "DEKOR - LEKELİ", 
+                   "DEKOR - ÇİZİK", "DEKOR - KIRIK", "DEKOR - ÇAPAKLI", "DEKOR - PEŞLİ", "DEKOR - FARKLI MODELE AİT", "DEKOR - BASKI HATALI", 
+                   "DEKOR - BASKI YOK", "MATBUAT - TİP ETİKETİ HATALI", "MATBUAT - TİP ETİKETİ FARKLI MODELE AİT", "MATBUAT - ÜRÜN ETİKETİ HATALI", 
+                   "MATBUAT - ÜRÜN ETİKETİ FARKLI MODELE AİT", "MONTAJ HATALARI - DEKOR OTURMAMIŞ", "MONTAJ HATALARI - PANO VİDASI SIKILMAMIŞ/EKSİK", 
+                   "MONTAJ HATALARI - BANTLAR EKSİK", "MONTAJ HATALARI - ARKA FİLTRE OTURMAMIŞ", "MONTAJ HATALARI - PANO TIRNAKLARI OTURMAMIŞ", 
+                   "MONTAJ HATALARI - TİP ETİKETİ ÇİZİK/YAMUK", "MONTAJ HATALARI - TEKNİK KART EKSİK/HATALI"]
+                : [];
+
+            const gridClass =
+                mainLine === "Dış" && operation === "Gaz Kaçak Odası" ? "grid-table" 
+                : mainLine === "Dış" && operation === "Son Kontrol" ? "grid-table-final-outer" 
+                : mainLine === "İç" && (operation === "Gaz Kaçak Odası" || operation === "Son Kontrol") ? "grid-table-final" 
+                : mainLine === "İç" && operation === "Görsel Kontrol" ? "grid-table-visual" 
+                : "grid-table-inner";
+
+            const handleCellClick = (row, col) => {
+                if (row !== "" && col !== "") {
+                    setCurrentCell({ row, col, rowIndex: rows.indexOf(row), colIndex: columns.indexOf(col) });
+                    setShowModal(true);
                 }
             };
 
-            const handleConfirm = (confirm) => {
+            // GOOGLE SHEETS ENTEGRASYONLU KAYIT
+            const handleConfirm = async (confirm) => {
                 if (confirm && currentCell) {
-                    const newRecord = {
-                        id: records.length + 1,
-                        date,
-                        shift,
-                        line,
-                        operation,
-                        errorCode: currentCell,
-                        sicilNo: user.sicilNo
-                    };
-                    setRecords([...records, newRecord]);
-                    alert(`Seçilen hücre (${currentCell}) kaydedildi!`);
+                    setSaving(true);
+                    setShowModal(false);
+
+                    setTimeout(async () => {
+                        const { row, col } = currentCell;
+                        const newRecord = {
+                            id: records.length + 1,
+                            date,
+                            shift,
+                            line,
+                            operation,
+                            sicilNo: user.sicilNo,
+                            hata: row,
+                            sasi: col
+                        };
+                        setRecords([...records, newRecord]);
+                        setSaving(false);
+                        setLastRecord(newRecord);
+                        setCurrentCell("");
+                        setTimeout(() => setLastRecord(null), 2000);
+
+                        // Google Sheets'e kayıt gönder
+                        try {
+                            const response = await fetch(SHEETS_WEBHOOK_URL, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    sicilNo: newRecord.sicilNo,
+                                    date: newRecord.date,
+                                    shift: newRecord.shift,
+                                    line: newRecord.line,
+                                    operation: newRecord.operation,
+                                    sasi: newRecord.sasi,
+                                    hata: newRecord.hata
+                                })
+                            });
+                            const result = await response.json();
+                            if (result.result !== "success") {
+                                showMessage("error", "Google Sheets'e kayıt gönderilemedi: " + (result.message || ""));
+                            }
+                        } catch (err) {
+                            showMessage("error", "Google Sheets'e kayıt gönderilemedi: " + err.message);
+                        }
+                    }, 750);
+                } else {
+                    setShowModal(false);
+                    setCurrentCell("");
                 }
-                setShowModal(false);
-                setCurrentCell("");
             };
 
             return (
-                <div className="max-w-2xl mx-auto mt-10 p-6 bg-white rounded-lg shadow-xl">
+                <div className="card">
                     <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-2xl font-bold">Hücre Seçimi Ekranı</h2>
-                        <div className="space-x-2">
-                            <button
-                                onClick={() => setShowErrorCodeScreen(false)}
-                                className="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600"
-                            >
-                                Geri
-                            </button>
-                            <button
-                                onClick={onLogout}
-                                className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-                            >
-                                Çıkış Yap
-                            </button>
+                        <h2 className="text-2xl font-bold text-gray-800">Hücre Seçimi Ekranı</h2>
+                        <div className="space-x-2 flex items-center">
+                            <button onClick={() => setShowErrorCodeScreen(false)} className="btn-secondary">Geri</button>
+                            <button onClick={onChangeUser} className="btn-primary">Sicil No Değiştir</button>
+                            <button onClick={onLogout} className="btn-danger">Çıkış Yap</button>
                         </div>
                     </div>
-                    <div className="mb-6">
+                    <div className="mb-6 text-gray-600">
                         <p><strong>Tarih:</strong> {date}</p>
                         <p><strong>Vardiya:</strong> {shift}</p>
                         <p><strong>Hat:</strong> {line}</p>
                         <p><strong>Operasyon:</strong> {operation}</p>
+                        <p><strong>Sicil No:</strong> {user.sicilNo}</p>
                     </div>
                     <div className="space-y-4">
-                        <div className="p-4 bg-gray-100 rounded-lg">
-                            <h3 className="text-lg font-bold mb-2">Hücre Seçimi</h3>
-                            {isCustomIcHatSonKontrol ? (
-                                <div className={gridClass}>
-                                    {customTable.map((rowArr, rowIndex) =>
-                                        rowArr.map((cell, colIndex) => {
-                                            const isHeaderCell = (rowIndex === 0 && (colIndex === 0 || colIndex === 1));
-                                            const isSelectable = !isHeaderCell && cell === "";
-                                            return (
-                                                <div
-                                                    key={`custom-${rowIndex}-${colIndex}`}
-                                                    className={`grid-cell ${currentCell === `R${rowIndex + 1}C${colIndex + 1}` ? 'selected' : ''}`}
-                                                    style={{
-                                                        fontWeight: (rowIndex === 0 || colIndex === 0) ? "bold" : "normal",
-                                                        cursor: isSelectable ? "pointer" : "default",
-                                                        backgroundColor: (rowIndex === 0 || colIndex === 0)
-                                                            ? "#f3f4f6"
-                                                            : (cell === "" ? "white" : "#e5e7eb")
-                                                    }}
-                                                    onClick={() => handleCellClick(rowArr, cell, rowIndex, colIndex)}
-                                                >
-                                                    {cell}
-                                                </div>
-                                            );
-                                        })
-                                    )}
-                                </div>
-                            ) : (
-                                <div className={gridClass}>
-                                    {rows.map((row, rowIndex) => (
-                                        columns.map((col, colIndex) => (
-                                            <div
-                                                key={`${row}-${col}`}
-                                                className={`grid-cell ${currentCell === `${row}-${col}` ? 'selected' : ''}`}
-                                                onClick={() => handleCellClick(row, col)}
-                                            >
-                                                {row === "" && col === "" ? "" : row === "" ? col : col === "" ? row : ""}
-                                            </div>
-                                        ))
-                                    ))}
+                        <div className="p-4 bg-gray-50 rounded-lg">
+                            <h3 className="text-lg font-bold mb-4 text-gray-800">Hücre Seçimi</h3>
+                            {saving && (
+                                <div className="info-message">
+                                    Kaydediliyor...
                                 </div>
                             )}
+                            {lastRecord && (
+                                <div className="success-message">
+                                    Kayıt başarılı: {lastRecord.hata} - {lastRecord.sasi}
+                                </div>
+                            )}
+                            <div className={gridClass}>
+                                {rows.map((row, rowIndex) => (
+                                    columns.map((col, colIndex) => (
+                                        <div
+                                            key={`${row}-${col}`}
+                                            className={`grid-cell ${currentCell && currentCell.row === row && currentCell.col === col ? 'selected' : ''}`}
+                                            onClick={() => handleCellClick(row, col)}
+                                        >
+                                            {row === "" && col === "" ? "" : row === "" ? col : col === "" ? row : ""}
+                                        </div>
+                                    ))
+                                ))}
+                            </div>
                             {showModal && (
                                 <div className="modal">
                                     <div className="modal-content">
-                                        <p>Seçilen hücre: {currentCell}. Onaylıyor musunuz?</p>
-                                        <div className="mt-4 space-x-4">
-                                            <button
-                                                onClick={() => handleConfirm(true)}
-                                                className="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600"
-                                            >
-                                                Evet
-                                            </button>
-                                            <button
-                                                onClick={() => handleConfirm(false)}
-                                                className="bg-red-500 text-white px-4 py-2 rounded hover:bg-red-600"
-                                            >
-                                                Hayır
-                                            </button>
+                                        <p className="text-gray-800">Seçilen hücre: {currentCell.row}-{currentCell.col}. Onaylıyor musunuz?</p>
+                                        <div className="button-row">
+                                            <button onClick={() => handleConfirm(true)} className="btn-success">Evet</button>
+                                            <button onClick={() => handleConfirm(false)} className="btn-danger">Hayır</button>
                                         </div>
                                     </div>
                                 </div>
@@ -582,34 +861,36 @@
                         </div>
                     </div>
                     <div className="mt-8">
-                        <h3 className="text-xl font-bold mb-4">Kayıtlar</h3>
+                        <h3 className="text-xl font-bold mb-4 text-gray-800">Kayıtlar</h3>
                         {records.length > 0 ? (
-                            <table className="w-full border-collapse">
+                            <table className="records-table">
                                 <thead>
-                                    <tr className="bg-gray-200">
-                                        <th className="border p-2">Sicil No</th>
-                                        <th className="border p-2">Tarih</th>
-                                        <th className="border p-2">Vardiya</th>
-                                        <th className="border p-2">Hat</th>
-                                        <th className="border p-2">Operasyon</th>
-                                        <th className="border p-2">Seçilen Hücre</th>
+                                    <tr>
+                                        <th>Sicil No</th>
+                                        <th>Tarih</th>
+                                        <th>Vardiya</th>
+                                        <th>Hat</th>
+                                        <th>Operasyon</th>
+                                        <th>Şasi</th>
+                                        <th>Hata</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {records.map(record => (
-                                        <tr key={record.id} className="border">
-                                            <td className="border p-2">{record.sicilNo}</td>
-                                            <td className="border p-2">{record.date}</td>
-                                            <td className="border p-2">{record.shift}</td>
-                                            <td className="border p-2">{record.line}</td>
-                                            <td className="border p-2">{record.operation}</td>
-                                            <td className="border p-2">{record.errorCode}</td>
+                                        <tr key={record.id}>
+                                            <td>{record.sicilNo}</td>
+                                            <td>{record.date}</td>
+                                            <td>{record.shift}</td>
+                                            <td>{record.line}</td>
+                                            <td>{record.operation}</td>
+                                            <td>{record.sasi}</td>
+                                            <td>{record.hata}</td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
                         ) : (
-                            <p>Henüz kayıt yok.</p>
+                            <p className="text-gray-500">Henüz kayıt yok.</p>
                         )}
                     </div>
                 </div>
