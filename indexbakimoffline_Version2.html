@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Veri Giriş Sitesi</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f3f4f6; margin:0; }
+    .container { max-width: 900px; margin: 2rem auto; background: #fff; padding: 2rem; border-radius: 10px; box-shadow: 0 2px 8px #0001;}
+    h1 { text-align: center; margin-bottom: 1.5rem; }
+    label { display: block; margin-bottom: .2rem; font-weight: bold;}
+    input, textarea { width: 100%; margin-bottom: .8rem; padding: .5rem; border: 1px solid #ccc; border-radius: 5px;}
+    button { padding: .5rem 1.2rem; border: none; border-radius: 5px; background: #2563eb; color: #fff; font-weight: bold;}
+    button:hover { background: #1d4ed8;}
+    table { width: 100%; border-collapse: collapse; margin-top: 2rem;}
+    th, td { border: 1px solid #ccc; padding: .5rem; text-align: left;}
+    th { background: #f3f4f6;}
+    .error { color: #dc2626; font-size: .9em;}
+    .success { color: #16a34a; font-size: .9em;}
+    .admin-row { display:flex; align-items:center; gap:.5rem;}
+    .del-btn { background: #dc2626; }
+    .del-btn:hover { background: #991b1b; }
+    .export-btn { background: #059669; }
+    .export-btn:hover { background: #065f46; }
+    .searchable-dropdown { position: relative; margin-bottom: .9rem;}
+    .searchable-input { width: 100%; padding: .5rem; border: 1px solid #ccc; border-radius:5px;}
+    .searchable-options { position: absolute; left: 0; top: 100%; width: 100%; max-height: 200px; overflow-y: auto; background: #fff; border: 1px solid #ccc; z-index: 10; border-bottom-left-radius:5px; border-bottom-right-radius:5px;}
+    .searchable-option { padding: .5rem; cursor: pointer; }
+    .searchable-option:hover, .searchable-option.selected { background: #e0e7ff;}
+    .cat-admin-panel { margin: 1.3rem 0 2rem 0; padding: 1rem; border-radius: 10px; background: #f8fafc; border: 1px solid #e5e7eb;}
+    .cat-admin-panel label { display:inline; margin-right:.6rem; font-weight:normal;}
+    .cat-admin-panel select, .cat-admin-panel input[type="text"] {width:auto; display:inline-block; margin-right:.6rem;}
+    .cat-admin-panel .cat-btn {background:#10b981;}
+    .cat-admin-panel .cat-btn:hover {background:#047857;}
+    .cat-admin-panel .cat-del-btn {background:#ef4444;}
+    .cat-admin-panel .cat-del-btn:hover {background:#b91c1c;}
+    @media (max-width: 600px) {
+      .container {padding:1rem;}
+      th, td {font-size:.8em;}
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Veri Giriş Formu</h1>
+  <form id="veriForm" autocomplete="off">
+    <label>Sicil No *</label>
+    <input type="text" id="sicilNo" required autocomplete="off" />
+    <span class="error" id="errSicilNo"></span>
+
+    <label>Tarih *</label>
+    <input type="date" id="tarih" required />
+    <span class="error" id="errTarih"></span>
+
+    <label>Vardiya *</label>
+    <div id="vardiyaDropdown"></div>
+    <span class="error" id="errVardiya"></span>
+
+    <label>Hat *</label>
+    <div id="hatDropdown"></div>
+    <span class="error" id="errHat"></span>
+
+    <label>Dummy No</label>
+    <div id="dummyNoDropdown"></div>
+    <span class="error" id="errDummyNo"></span>
+
+    <label>Jig No</label>
+    <div id="jigNoDropdown"></div>
+    <span class="error" id="errJigNo"></span>
+
+    <label>Hata Kodu</label>
+    <div id="hataKoduDropdown"></div>
+    <span class="error" id="errHataKodu"></span>
+
+    <label>Değişen Parça</label>
+    <div id="degisenParcaDropdown"></div>
+    <span class="error" id="errDegisenParca"></span>
+
+    <label>Parça Adedi</label>
+    <div id="parcaAdediDropdown"></div>
+    <span class="error" id="errParcaAdedi"></span>
+
+    <label>Açıklama *</label>
+    <textarea id="aciklama" rows="2" required></textarea>
+    <span class="error" id="errAciklama"></span>
+
+    <button type="submit" id="submitBtn">Kaydet</button>
+    <span id="submitMessage"></span>
+  </form>
+
+  <div class="admin-row" style="margin-top:1.5rem;">
+    <input type="password" id="adminInput" placeholder="Admin şifresi"/>
+    <button id="adminBtn">Admin Giriş</button>
+    <span id="adminStatus"></span>
+  </div>
+  
+  <div id="catAdminPanel"></div>
+
+  <div id="tabloDiv"></div>
+</div>
+
+<script>
+// Kategori seçenekleri ve localStorage keyleri
+const catKeys = {
+  vardiya: "vardiyaOptions",
+  hat: "hatOptions",
+  dummyNo: "dummyNoOptions",
+  jigNo: "jigNoOptions",
+  hataKodu: "hataKoduOptions",
+  degisenParca: "degisenParcaOptions",
+  parcaAdedi: "parcaAdediOptions"
+};
+const TABLE_HEADERS = [
+  "Sicil No", "Tarih", "Vardiya", "Hat", "Dummy No",
+  "Jig No", "Hata Kodu", "Değişen Parça", "Parça Adedi", "Açıklama"
+];
+const ADMIN_PASSWORD = "lqcadmin012";
+let isAdmin = false;
+let tableData = [];
+
+// --------- Kategori Seçeneklerinin Yönetimi ve Sıralama ----------
+function getDefaultOptions() {
+  return {
+    vardiya: ["Sabah","Akşam"],
+    hat: ["İç", "İç 1", "İç 2", "Dış","Dış 1","Dış 2", "Mix", "CAC", "Genel"],
+    dummyNo: Array.from({length:42},(_,i)=>`${i+1}`),
+    jigNo: (() => { let arr=[]; ['A','B','C'].forEach(p=>{for(let i=1;i<=150;i++)arr.push(`${p}${i}`)}); return arr; })(),
+    hataKodu: ["B.01 - Bara Fırça Çıkık","B.02 - Bara Yayı","B.03 - Bara Kablosu Çıkık","B.04 - Bara Kablosu Kopuk","B.05 - Bara Çıkık","B.06 - Barada Elektrik Yok","B.07 - Bara Sıkışmış","B.08 - Bara Soketi Çıkık","B.09 - Bara Pabuç Arızalı","B.10 - Bara Kırık","B.11 - Bara Fırça Kırık","B.12 - Bara Arızalı","D.01 - Waiting","D.02 - Kol Çıkık","D.03 - Kol Kırık","D.04 - Kol Gevşek","D.05 - Kol Plastiği Eksik","D.06 - Kol Arızalı","D.07 - Dummy Kablo Kopuk","D.08 - Dummy Kablo Çıkık","D.09 - Haberleşme Hatası","D.11 - Ekran Yok/Kapalı","D.12 - Ekran Yerinden Çıkık","D.13 - Enerji Yok","D.14 - Eeprom Okumuyor","D.15 - Ürün Çalıştırmıyor","D.16 - Buzzer Arızası","D.17 - Basınç Düşük","D.18 - Basınç Yüksek","D.19 - Basınçlar Ters","D.20 - Basınç Göstermiyor","D.21 - Basınç Hatası","D.22 - Data Atmıyor","G.01 - Sigorta Arızalı","G.02 - Lehim Kopuk","G.03 - Krokodil Kopuk","G.04 - Krokodil Kırık","G.05 - Krokodil Arızalı","G.06 - Vida Yok","G.07 - Ayak Yok","G.08 - Ayak Çıkık","G.09 - Ayak Arızalı","G.10 - Arıza Bulunamadı","G.11 - Çalışmıyor","G.12 - Kapalı Geliyor","G.13 - Gaz Kaçak","J.01 - Jig Kapak Kırık","J.02 - Jig Kablo Kopuk","J.03 - Jig Ayak Yok","J.04 - Jig Arızalı","J.05 - Jig Yay Arızalı","J.06 - Jig Kapak Çıkık","J.07 - Jig Kapak Arızalı","K.01 - Kablo Arızalı","K.02 - Kablo Kopuk","K.03 - Kablo Çıkık","K.04 - LGMV Kablosu Arızalı","K.05 - LGMV Kablosu Kopuk","K.06 - LGMV Kablosu Çıkık","K.07 - LGMV Kablosu Yok","M.01 - Mıknatıs Arızalı","M.02 - Mıknatıs Yok","M.03 - Mıknatıs Çıkık","M.04 - Mıknatıs Kırık","M.05 - Mıknatıs Gevşek","M.06 - Mıknatıs Kopuk","S.01 - Soket Arızalı","S.02 - Soket Çıkık","S.03 - Soket Kırık","S.04 - Soket Kopuk","S.05 - Soket Gevşemiş","S.06 - Soket Kablo Arızalı","S.07 - Soket Kablo Çıkık","S.08 - Soket Kablo Kopuk","S.09 - Terminal Çıkık/Kopuk","S.10 - Terminal Arızalı","S.11 - Soket Yok","T.01 - Topraklama Hatası","T.02 - Topraklama Eksik","T.03 - Topraklama Mıknatıs","T.04 - Topraklama Kablosu Arızalı","T.05 - Topraklama Kablosu Kopuk","T.06 - Topraklama Kablosu Çıkık","T.07 - Topraklama Kablosu Soket Çıkık","TS.01 - Yüksek Gerilim Hatası","TS.02 - Yalıtım Hatası","TS.03 - Kaçak Akım Hatası","U.01 - Uçluk Arızalı","U.02 - Uçluk Çıkık","U.03 - Uçluk Kırık","U.04 - Uçluk Kopuk","U.05 - Uçluk Sıkışmış","U.06 - Uçluk Yamuk","U.07 - Uçluk Yapışmış","U.08 - Uçluk Yanmış","U.09 - Uçluk Yok","U.10 - Uçluk soketten çıkmış","U.11 - Kovan Arızalı","U.12 - Kovan lehim erimiş","U.13 - Kovan yapışmış","U.14 - Kovan Yamuk","U.15 - Kovan Kırık","Y.01 - Yay Arızalı","Y.02 - Yay Erimiş/Yanmış"],
+    degisenParca: ["Uçluk", "Mıknatıs", "Soket", "LGMV Kablosu", "Yay", "Hortum", "Terminal", "Krokodil", "Pabuç", "Lehim", "Optokuplör", "Ayak", "Kovan", "Vida", "Kapak", "Kablo", "Wifi Modül", "Fiber Somun", "Filtre", "Conta", "Bara", "Fırça", "Kol Plastiği", "Kaplin", "Oring", "Somun", "Teflon", "Kol", "Röle", "Lamba", "Anahtar", "Sigorta", "Mandal", "Güç Adaptörü"],
+    parcaAdedi: Array.from({length:10},(_,i)=>`${i+1}`)
+  };
+}
+function loadCategoryOptions() {
+  const def = getDefaultOptions();
+  let opts = {};
+  for(let key in catKeys) {
+    try {
+      const saved = localStorage.getItem(catKeys[key]);
+      opts[key] = saved ? JSON.parse(saved) : def[key];
+    } catch(e){ opts[key]=def[key]; }
+  }
+  return opts;
+}
+function saveCategoryOptions(opts) {
+  for(let key in catKeys) {
+    localStorage.setItem(catKeys[key], JSON.stringify(opts[key]));
+  }
+}
+let categoryOptions = loadCategoryOptions();
+
+// --------- Searchable Dropdown Component (kategoriye özel) ---------
+function searchableDropdown(id, options, required=false, placeholder="Seçiniz") {
+  let selVal = "";
+  let wrapper = document.getElementById(id);
+  wrapper.innerHTML = `
+    <div class="searchable-dropdown" tabindex="0">
+      <input class="searchable-input" type="text" autocomplete="off" placeholder="${placeholder}" value="" />
+      <div class="searchable-options" style="display:none"></div>
+    </div>
+  `;
+  let dropdown = wrapper.querySelector('.searchable-dropdown');
+  let input = wrapper.querySelector('.searchable-input');
+  let optionsDiv = wrapper.querySelector('.searchable-options');
+  let currentOptions = [{label:"Seçimi Kaldır", value:""}].concat(options.map(x=>({label:x,value:x})));
+  let showOptions = false;
+
+  function renderOptions(filter="") {
+    let filtered = currentOptions.filter(x=>x.label.toLowerCase().includes(filter.toLowerCase()));
+    optionsDiv.innerHTML = filtered.map(opt=>`<div class="searchable-option${opt.value===selVal?" selected":""}" data-value="${opt.value}">${opt.label}</div>`).join('');
+    if(filtered.length===0) optionsDiv.innerHTML = `<div class="searchable-option" style="color:#aaa">Seçenek yok</div>`;
+  }
+  function openOptions() {
+    optionsDiv.style.display="block";
+    showOptions=true;
+    renderOptions(input.value);
+  }
+  function closeOptions() {
+    setTimeout(()=>{optionsDiv.style.display="none"; showOptions=false;},150);
+  }
+  input.addEventListener('focus',openOptions);
+  input.addEventListener('input',()=>renderOptions(input.value));
+  input.addEventListener('blur',closeOptions);
+  optionsDiv.addEventListener('mousedown',function(e){
+    let opt = e.target.closest('.searchable-option');
+    if(!opt) return;
+    selVal = opt.getAttribute('data-value');
+    input.value = selVal;
+    optionsDiv.style.display="none";
+    showOptions=false;
+    input.dispatchEvent(new Event('change'));
+  });
+  // Set/get için
+  wrapper.setValue = v => { selVal = v; input.value = v; };
+  wrapper.getValue = () => selVal;
+  // Reset için
+  wrapper.reset = () => { selVal=""; input.value=""; };
+  // Required için
+  wrapper.isRequired = required;
+  // On change için
+  input.addEventListener('change',()=>{wrapper.dispatchEvent(new Event('changed'));});
+}
+
+// --------- Dropdownları başlat ---------
+function renderDropdowns() {
+  searchableDropdown("vardiyaDropdown", categoryOptions.vardiya, true, "Vardiya seçiniz");
+  searchableDropdown("hatDropdown", categoryOptions.hat, true, "Hat seçiniz");
+  searchableDropdown("dummyNoDropdown", categoryOptions.dummyNo, false, "Dummy No seçiniz");
+  searchableDropdown("jigNoDropdown", categoryOptions.jigNo, false, "Jig No seçiniz");
+  searchableDropdown("hataKoduDropdown", categoryOptions.hataKodu, false, "Hata Kodu seçiniz");
+  searchableDropdown("degisenParcaDropdown", categoryOptions.degisenParca, false, "Değişen Parça seçiniz");
+  searchableDropdown("parcaAdediDropdown", categoryOptions.parcaAdedi, false, "Parça Adedi seçiniz");
+}
+
+// --------- Kategori Admin Paneli ---------
+function renderCatAdminPanel() {
+  const cats = [
+    {key:'dummyNo', label:'Dummy No', sort:true},
+    {key:'jigNo', label:'Jig No', sort:true},
+    {key:'hataKodu', label:'Hata Kodu', sort:true},
+    {key:'parcaAdedi', label:'Parça Adedi', sort:true},
+    {key:'degisenParca', label:'Değişen Parça', sort:false},
+    {key:'vardiya', label:'Vardiya', sort:false},
+    {key:'hat', label:'Hat', sort:false}
+  ];
+  let panel = '';
+  if(isAdmin) {
+    panel += `<div class="cat-admin-panel"><strong>Kategori Seçenek Yönetimi</strong><br>`;
+    cats.forEach(cat=>{
+      panel += `
+      <div style="margin-top:.9em;">
+        <label>${cat.label}:</label>
+        <select id="delSel_${cat.key}">
+          <option value="">Seçenek Seç</option>
+          ${categoryOptions[cat.key].map(o=>`<option value="${o}">${o}</option>`).join('')}
+        </select>
+        <button class="cat-del-btn" onclick="deleteCatOption('${cat.key}')">Sil</button>
+        <input type="text" id="addInp_${cat.key}" placeholder="Yeni Ekle" />
+        <button class="cat-btn" onclick="addCatOption('${cat.key}',${cat.sort})">Ekle</button>
+      </div>
+      `;
+    });
+    panel += `<div style="color:#888; font-size:.93em; margin-top:.9em;">* Dummy No, Jig No, Hata Kodu, Parça Adedi kategorilerinde eklenenler alfabetik sıralanır.</div>`;
+    panel += `</div>`;
+  }
+  document.getElementById("catAdminPanel").innerHTML = panel;
+}
+
+// --------- Kategoriye Seçenek Ekle/Sil Fonksiyonları ---------
+window.addCatOption = function(catKey,alphabeticSort) {
+  let v = document.getElementById("addInp_" + catKey).value.trim();
+  if (!v) return;
+  if (categoryOptions[catKey].includes(v)) { alert("Zaten var!"); return; }
+  categoryOptions[catKey].push(v);
+  if(alphabeticSort) categoryOptions[catKey].sort((a,b)=>a.localeCompare(b,'tr'));
+  // Diğer kategorilerde eklenen en sona gelir
+  saveCategoryOptions(categoryOptions);
+  renderDropdowns();
+  renderCatAdminPanel();
+};
+window.deleteCatOption = function(catKey) {
+  let sel = document.getElementById("delSel_" + catKey).value;
+  if (!sel) return;
+  if (!categoryOptions[catKey].includes(sel)) return;
+  categoryOptions[catKey] = categoryOptions[catKey].filter(x=>x!==sel);
+  saveCategoryOptions(categoryOptions);
+  renderDropdowns();
+  renderCatAdminPanel();
+};
+
+// --------- Tablo ve Kayıt Yönetimi ---------
+function loadTableData() {
+  try {
+    const saved = localStorage.getItem('tableData');
+    tableData = saved ? JSON.parse(saved) : [];
+  } catch(e){ tableData=[]; }
+}
+function saveTableData() {
+  try { localStorage.setItem('tableData', JSON.stringify(tableData)); } catch(e){}
+}
+function clearErrors() {
+  ["sicilNo","tarih","vardiya","hat","dummyNo","jigNo","hataKodu","degisenParca","parcaAdedi","aciklama"].forEach(id=>document.getElementById("err"+id.charAt(0).toUpperCase()+id.slice(1)).textContent="");
+}
+function validateForm(f) {
+  let valid=true;
+  clearErrors();
+  if(!f.sicilNo) {valid=false; document.getElementById("errSicilNo").textContent="Sicil No zorunludur";}
+  else if(!["00n","00m","00eng"].includes(f.sicilNo)) {valid=false; document.getElementById("errSicilNo").textContent="Geçersiz Sicil No";}
+  if(!f.tarih) {valid=false; document.getElementById("errTarih").textContent="Tarih zorunludur";}
+  if(!f.vardiya) {valid=false; document.getElementById("errVardiya").textContent="Vardiya zorunludur";}
+  if(!f.hat) {valid=false; document.getElementById("errHat").textContent="Hat zorunludur";}
+  if(!f.aciklama) {valid=false; document.getElementById("errAciklama").textContent="Açıklama zorunludur";}
+  if(f.degisenParca && !f.parcaAdedi) {valid=false; document.getElementById("errParcaAdedi").textContent="Parça Adedi seçilmek zorunda (Değişen Parça seçildiğinde)";}
+  if(f.parcaAdedi && !f.degisenParca) {valid=false; document.getElementById("errDegisenParca").textContent="Değişen Parça seçilmek zorunda (Parça Adedi seçildiğinde)";}
+  if(f.vardiya && !categoryOptions.vardiya.includes(f.vardiya)) {valid=false; document.getElementById("errVardiya").textContent="Sadece listeden seçiniz";}
+  if(f.hat && !categoryOptions.hat.includes(f.hat)) {valid=false; document.getElementById("errHat").textContent="Sadece listeden seçiniz";}
+  if(f.dummyNo && !categoryOptions.dummyNo.includes(f.dummyNo)) {valid=false; document.getElementById("errDummyNo").textContent="Sadece listeden seçiniz";}
+  if(f.jigNo && !categoryOptions.jigNo.includes(f.jigNo)) {valid=false; document.getElementById("errJigNo").textContent="Sadece listeden seçiniz";}
+  if(f.hataKodu && !categoryOptions.hataKodu.includes(f.hataKodu)) {valid=false; document.getElementById("errHataKodu").textContent="Sadece listeden seçiniz";}
+  if(f.degisenParca && !categoryOptions.degisenParca.includes(f.degisenParca)) {valid=false; document.getElementById("errDegisenParca").textContent="Sadece listeden seçiniz";}
+  if(f.parcaAdedi && !categoryOptions.parcaAdedi.includes(f.parcaAdedi)) {valid=false; document.getElementById("errParcaAdedi").textContent="Sadece listeden seçiniz";}
+  return valid;
+}
+function renderTable() {
+  let tabloDiv = document.getElementById("tabloDiv");
+  if(!tableData.length) { tabloDiv.innerHTML = `<p style="color:#555">Henüz kayıt yok.</p>`; return; }
+  let t = `<table><thead><tr>`;
+  TABLE_HEADERS.forEach(h=>t+=`<th>${h}</th>`);
+  t += `<th>Sil</th>`;
+  t += `</tr></thead><tbody>`;
+  tableData.forEach((entry,idx)=>{
+    t += `<tr>`;
+    TABLE_HEADERS.forEach(h=>{
+      let k = h.replace(/ /g,"").replace("ç","c").replace("ı","i").replace("ğ","g").replace("ü","u").replace("ş","s").replace("ö","o").toLowerCase();
+      t += `<td>${entry[k]}</td>`;
+    });
+    t += `<td><button class="del-btn" onclick="deleteRow(${idx})">Sil</button></td>`;
+    t += `</tr>`;
+  });
+  t += `</tbody></table>`;
+  if(isAdmin) t += `<button class="export-btn" onclick="exportExcel()">Excel'e Aktar</button>`;
+  tabloDiv.innerHTML = t;
+}
+function exportExcel() {
+  let csv = TABLE_HEADERS.join(";") + "\n";
+  tableData.forEach(entry=>{
+    let row = TABLE_HEADERS.map(h=>{
+      let k = h.replace(/ /g,"").replace("ç","c").replace("ı","i").replace("ğ","g").replace("ü","u").replace("ş","s").replace("ö","o").toLowerCase();
+      return `"${entry[k]||""}"`;
+    }).join(";");
+    csv += row + "\n";
+  });
+  let blob = new Blob([csv],{type:"text/csv"});
+  let link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = 'veri_kayitlari.csv';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+window.deleteRow = function(idx) {
+  if(confirm("Kaydı silmek istediğinize emin misiniz?")) {
+    tableData.splice(idx,1);
+    saveTableData();
+    renderTable();
+  }
+}
+
+// --------- Form ve Admin Giriş Olayları ---------
+document.getElementById("veriForm").addEventListener("submit",function(e){
+  e.preventDefault();
+  let f = {
+    sicilNo: document.getElementById("sicilNo").value.trim(),
+    tarih: document.getElementById("tarih").value,
+    vardiya: document.getElementById("vardiyaDropdown").getValue(),
+    hat: document.getElementById("hatDropdown").getValue(),
+    dummyNo: document.getElementById("dummyNoDropdown").getValue(),
+    jigNo: document.getElementById("jigNoDropdown").getValue(),
+    hataKodu: document.getElementById("hataKoduDropdown").getValue(),
+    degisenParca: document.getElementById("degisenParcaDropdown").getValue(),
+    parcaAdedi: document.getElementById("parcaAdediDropdown").getValue(),
+    aciklama: document.getElementById("aciklama").value.trim()
+  };
+  if(!validateForm(f)) return;
+  let entry = {
+    sicilno: f.sicilNo,
+    tarih: f.tarih,
+    vardiya: f.vardiya || '-',
+    hat: f.hat || '-',
+    dummyno: f.dummyNo || '-',
+    jigno: f.jigNo || '-',
+    hatakodu: f.hataKodu || '-',
+    degisenparca: f.degisenParca || '-',
+    parcaadedi: f.parcaAdedi || '-',
+    aciklama: f.aciklama
+  };
+  tableData.push(entry);
+  saveTableData();
+  renderTable();
+  document.getElementById("submitMessage").textContent = "Kayıt başarıyla eklendi!";
+  document.getElementById("submitMessage").className = "success";
+  setTimeout(()=>{document.getElementById("submitMessage").textContent="";},2000);
+  this.reset();
+  document.getElementById("tarih").value = new Date().toISOString().split('T')[0];
+  // Dropdownları resetle
+  ["vardiyaDropdown","hatDropdown","dummyNoDropdown","jigNoDropdown","hataKoduDropdown","degisenParcaDropdown","parcaAdediDropdown"].forEach(id=>document.getElementById(id).reset());
+});
+
+document.getElementById("adminBtn").addEventListener("click",function(){
+  let input = document.getElementById("adminInput").value;
+  if(input===ADMIN_PASSWORD) {
+    isAdmin=true;
+    document.getElementById("adminStatus").textContent="Admin aktif";
+    document.getElementById("adminStatus").className="success";
+  } else {
+    isAdmin=false;
+    document.getElementById("adminStatus").textContent="Yanlış şifre!";
+    document.getElementById("adminStatus").className="error";
+  }
+  renderCatAdminPanel();
+  renderTable();
+  document.getElementById("adminInput").value="";
+});
+
+window.onload = function(){
+  document.getElementById("tarih").value = new Date().toISOString().split('T')[0];
+  categoryOptions = loadCategoryOptions();
+  renderDropdowns();
+  loadTableData();
+  renderCatAdminPanel();
+  renderTable();
+};
+
+</script>
+</body>
+</html>
